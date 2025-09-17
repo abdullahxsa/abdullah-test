@@ -7,9 +7,6 @@ const ASSETS = [
   BASE + 'sw.js',
   BASE + 'icons/icon-192.png',
   BASE + 'icons/icon-512.png'
-,
-  "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js",
-  "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"
 ];
 
 self.addEventListener('install', e => {
@@ -27,6 +24,5 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
 });
-
 
 

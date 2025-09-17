@@ -182,7 +182,7 @@
 
     <section class="card" style="margin-top:12px">
       <div class="table-wrap">
-        <div class="table-wrapper"><table id="tbl" role="table" aria-label="سجل المشاوير">
+        <table id="tbl" role="table" aria-label="سجل المشاوير">
           <thead>
             <tr>
               <th>تاريخ</th><th>ساعات</th><th>دخل</th><th>نسبة%</th>
@@ -446,4 +446,3 @@
   .table-wrapper { overflow-x: auto; }
 </style>
 </body>
-
