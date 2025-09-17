@@ -10,6 +10,7 @@
   <link rel="apple-touch-icon" href="/abdullah-test/icons/icon-192.png" />
   <style>
     :root{--bg:#0f1115;--card:#151923;--text:#e8eaef;--muted:#9aa3af;--pri:#6aa0ff;--ok:#39d98a;--bad:#ff6b6b;--br:16px}
+    *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,"Noto Sans Arabic",Tahoma,sans-serif}
     .wrap{max-width:960px;margin:auto;padding:24px}
     h1{margin:8px 0 16px;font-size:26px}
@@ -26,6 +27,7 @@
     .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
     .stat{background:#0d1017;padding:10px;border-radius:10px}
     .stat b{display:block;font-size:18px;margin-top:4px}
+    @media (max-width:780px){.row,.stats{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -36,16 +38,16 @@
       <div class="card">
         <div class="row">
           <div><label>تاريخ</label><input type="date" id="date"></div>
-          <div><label>ساعات العمل</label><input type="number" step="0.1" id="hours"></div>
-          <div><label>الدخل الكلي</label><input type="number" id="gross"></div>
-          <div><label>نسبة المنصة %</label><input type="number" id="pct"></div>
-          <div><label>بنزين</label><input type="number" id="fuel"></div>
-          <div><label>مصروفات أخرى</label><input type="number" id="other"></div>
-          <div><label>عدد المشاوير</label><input type="number" id="rides"></div>
-          <div><label>صيانة</label><input type="number" id="maint"></div>
+          <div><label>ساعات العمل</label><input type="number" step="0.1" id="hours" placeholder="8"></div>
+          <div><label>الدخل الكلي</label><input type="number" step="0.01" id="gross" placeholder="260"></div>
+          <div><label>نسبة المنصة %</label><input type="number" step="0.01" id="pct" placeholder="25"></div>
+          <div><label>بنزين</label><input type="number" step="0.01" id="fuel" placeholder="35"></div>
+          <div><label>مصروفات أخرى</label><input type="number" step="0.01" id="other" placeholder="10"></div>
+          <div><label>عدد المشاوير</label><input type="number" step="1" id="rides" placeholder="15"></div>
+          <div><label>صيانة/استهلاك</label><input type="number" step="0.01" id="maint" placeholder="20"></div>
         </div>
         <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
-          <button id="calcBtn">احسب</button>
+          <button id="calcBtn">احسب وأضف</button>
           <button class="ghost" id="clearInputs">مسح</button>
           <button class="ghost" id="exportCsv">تصدير CSV</button>
           <button class="ghost" id="installBtn" hidden>تثبيت التطبيق</button>
@@ -62,6 +64,7 @@
               <option value="week">الأسبوع</option>
               <option value="month">الشهر</option>
               <option value="year">السنة</option>
+              <option value="custom">مخصّص</option>
             </select>
           </div>
           <div><input type="date" id="from"></div>
@@ -84,31 +87,84 @@
         </thead>
         <tbody></tbody>
       </table>
+      <div style="opacity:.6;font-size:12px;margin-top:8px">يُحفظ محليًا (LocalStorage)</div>
     </div>
   </div>
 
   <script>
-    const BASE='/abdullah-test/'; const swPath=BASE+'sw.js';
-    if('serviceWorker'in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register(swPath,{scope:BASE}))}
+    const BASE='/abdullah-test/';
+    const swPath=BASE+'sw.js';
+    if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register(swPath,{scope:BASE}).catch(console.error))}
 
-    let deferred;const installBtn=document.getElementById('installBtn');
-    window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferred=e;installBtn.hidden=false});
-    installBtn?.addEventListener('click',async()=>{deferred.prompt();await deferred.userChoice;deferred=null;installBtn.hidden=true});
+    let deferred; const installBtn=document.getElementById('installBtn');
+    window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferred=e;installBtn.hidden=false});
+    installBtn?.addEventListener('click',async()=>{if(!deferred)return;deferred.prompt();await deferred.userChoice;deferred=null;installBtn.hidden=true});
 
-    const $=id=>document.getElementById(id),inputs=['date','hours','gross','pct','fuel','other','rides','maint'].map($);
+    const $=id=>document.getElementById(id);
+    const inputs=['date','hours','gross','pct','fuel','other','rides','maint'].map($);
     const [date,hours,gross,pct,fuel,other,rides,maint]=inputs;
-    const s_net=$('s_net'),s_hr=$('s_hr'),s_ride=$('s_ride'),s_rides=$('s_rides');const tbody=document.querySelector('#tbl tbody');
-    const load=()=>JSON.parse(localStorage.getItem('trip-logs')||'[]');const save=a=>localStorage.setItem('trip-logs',JSON.stringify(a));
+    const s_net=s_net,s_hr=s_hr,s_ride=s_ride,s_rides=s_rides;
+    const tbody=document.querySelector('#tbl tbody');
 
-    $('calcBtn').onclick=()=>{const d=date.value||new Date().toISOString().slice(0,10),h=+hours.value||0,g=+gross.value||0,p=(+pct.value||0)/100,f=+fuel.value||0,o=+other.value||0,m=+maint.value||0,r=+rides.value||0;
-      const comm=g*p,net=g-comm-f-o-m,hr=h?net/h:0,perRide=r?net/r:0;
+    const KEY='trip-logs';
+    const load=()=>JSON.parse(localStorage.getItem(KEY)||'[]');
+    const save=a=>localStorage.setItem(KEY,JSON.stringify(a));
+
+    calcBtn.onclick=()=>{
+      const d=date.value||new Date().toISOString().slice(0,10);
+      const h=+hours.value||0, g=+gross.value||0, p=(+pct.value||0)/100;
+      const f=+fuel.value||0, o=+other.value||0, m=+maint.value||0, r=+rides.value||0;
+      const comm=g*p; const net=g-comm-f-o-m; const hr=h?net/h:0; const perRide=r?net/r:0;
       const row={d,h,g,pct:+pct.value||0,comm:+comm.toFixed(2),f,o,m,r,net:+net.toFixed(2),hr:+hr.toFixed(2),perRide:+perRide.toFixed(2)};
-      const arr=load();arr.push(row);save(arr);render()};
-    $('clearInputs').onclick=()=>inputs.forEach(i=>i.value='');
-    $('applyFilter').onclick=render;
-    $('exportCsv').onclick=()=>{const arr=load();if(!arr.length)return alert('لا يوجد بيانات');const header=['date','hours','gross','pct','comm','fuel','other','maint','rides','net','hr','perRide'];const lines=[header.join(',')];for(const r of arr)lines.push([r.d,r.h,r.g,r.pct,r.comm,r.f,r.o,r.m,r.r,r.net,r.hr,r.perRide].join(','));const blob=new Blob([lines.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='logs.csv';a.click()};
-    function render(){const arr=load();tbody.innerHTML='';let sum=0,hrs=0,rs=0;for(const r of arr){sum+=r.net;hrs+=r.h;rs+=r.r;const tr=document.createElement('tr');tr.innerHTML=`<td>${r.d}</td><td>${r.h}</td><td>${r.g}</td><td>${r.pct}%</td><td>${r.comm}</td><td>${r.f}</td><td>${r.o}</td><td>${r.m}</td><td>${r.r}</td><td class="${r.net>=0?'ok':'bad'}">${r.net}</td>`;tbody.appendChild(tr)};s_net.textContent=sum;s_hr.textContent=hrs?(sum/hrs).toFixed(2):0;s_ride.textContent=rs?(sum/rs).toFixed(2):0;s_rides.textContent=rs}
-    date.value=new Date().toISOString().slice(0,10);render();
+      const arr=load(); arr.push(row); save(arr); render();
+    };
+    clearInputs.onclick=()=>inputs.forEach(i=>i.value='');
+    applyFilter.onclick=render;
+    exportCsv.onclick=()=>{
+      const arr=load(); if(!arr.length) return alert('لا يوجد بيانات');
+      const header=['date','hours','gross','pct','comm','fuel','other','maint','rides','net','hr','perRide'];
+      const lines=[header.join(',')];
+      for(const r of arr) lines.push([r.d,r.h,r.g,r.pct,r.comm,r.f,r.o,r.m,r.r,r.net,r.hr,r.perRide].join(','));
+      const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob); a.download='logs.csv'; a.click(); URL.revokeObjectURL(a.href);
+    };
+
+    function render(){
+      const arr=filter(load());
+      tbody.innerHTML=''; let sum=0, hrs=0, rs=0;
+      for(const r of arr){
+        sum+=+r.net; hrs+=+r.h; rs+=+r.r;
+        const tr=document.createElement('tr');
+        tr.innerHTML=\<td>\</td><td>\</td><td>\</td><td>\%</td>
+                       <td>\</td><td>\</td><td>\</td><td>\</td>
+                       <td>\</td><td class="\">\</td>\;
+        tbody.appendChild(tr);
+      }
+      s_net.textContent=sum.toFixed(2);
+      s_hr.textContent=(hrs? (sum/hrs):0).toFixed(2);
+      s_ride.textContent=(rs? (sum/rs):0).toFixed(2);
+      s_rides.textContent=rs;
+    }
+
+    const range=range, from=from, to=to;
+    range.addEventListener('change', ()=>{
+      const t=new Date();
+      if(range.value==='day'){ const d=t.toISOString().slice(0,10); from.value=d; to.value=d; }
+      else if(range.value==='week'){ const s=new Date(t); s.setDate(t.getDate()-6); from.value=s.toISOString().slice(0,10); to.value=t.toISOString().slice(0,10); }
+      else if(range.value==='month'){ const s=new Date(t.getFullYear(),t.getMonth(),1); from.value=s.toISOString().slice(0,10); to.value=t.toISOString().slice(0,10); }
+      else if(range.value==='year'){ const s=new Date(t.getFullYear(),0,1); from.value=s.toISOString().slice(0,10); to.value=t.toISOString().slice(0,10); }
+      else { from.value=''; to.value=''; }
+    });
+
+    function within(d,a,b){
+      if(!a && !b) return true;
+      const ts=+new Date(d), s=a?+new Date(a):-Infinity, e=b?+new Date(b):Infinity;
+      return ts>=s && ts<=e;
+    }
+    function filter(arr){ const a=from.value||null, b=to.value||null; return arr.filter(r=>within(r.d,a,b)); }
+
+    date.value=new Date().toISOString().slice(0,10);
+    render();
   </script>
 </body>
 </html>
